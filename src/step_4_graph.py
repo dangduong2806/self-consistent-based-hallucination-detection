@@ -24,6 +24,9 @@ class ReasoningGraph:
         all_paths: List các list verified steps.
         Mỗi step có: {'content': '...', 'confidence': 0.9}
         """
+        # Reset graph mỗi lần build mới để tránh rác từ lần chạy trước
+        self.graph.clear()
+        self.node_counter = 0
         # node gốc
         root_id = "ROOT"
         self.graph.add_node(root_id, content="Start", count=1)
@@ -67,4 +70,5 @@ class ReasoningGraph:
                     # Thêm cạnh từ cha xuống con mới
                     self.graph.add_edge(current_parent_id, new_node_id, weight=1)
                     current_parent_id = new_node_id  # đi tiếp xuống dưới
+        return self.graph
 
