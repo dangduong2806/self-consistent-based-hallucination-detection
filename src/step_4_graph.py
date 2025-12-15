@@ -1,5 +1,5 @@
 import networkx as nx
-from step_3_graph_builder import IsomorphismEngine
+from .step_3_graph_builder import IsomorphismEngine
 
 class ReasoningGraph:
     def __init__(self):
