@@ -1,6 +1,6 @@
 import collections
 
-form collections import Counter
+from collections import Counter
 
 class AdaptiveSampler:
     def __init__(self, llm_engine, config):
