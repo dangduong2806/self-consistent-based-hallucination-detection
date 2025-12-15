@@ -9,7 +9,8 @@ import numpy as np
 from models.llm_engine import LLMEngine
 from src.step_1_sampler import AdaptiveSampler
 from src.step_2_verifier import LocalVerifier
-from src.step_3_graph_builder import ReasoningGraphBuilder
+# from src.step_3_graph_builder import ReasoningGraphBuilder
+from src.step_4_graph import ReasoningGraph
 from src.step_4_structural_verifier import StructuralVerifier
 from src.step_5_selector import EntropySelector
 
@@ -39,7 +40,7 @@ class ResearchPipeline:
         # 3. Initialize Pipeline Components
         self.sampler = AdaptiveSampler(self.llm, self.config)
         self.local_verifier = LocalVerifier(self.config)
-        self.graph_builder = ReasoningGraphBuilder() # Có chứa IsomorphismEngine bên trong
+        self.graph_builder = ReasoningGraph() # Có chứa IsomorphismEngine bên trong
         self.struct_verifier = StructuralVerifier(self.config)
         self.selector = EntropySelector()
 
