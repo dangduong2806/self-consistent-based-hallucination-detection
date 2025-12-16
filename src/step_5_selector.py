@@ -15,10 +15,16 @@ class EntropySelector:
         leaf_nodes = [n for n in graph.nodes() if graph.out_degree(n) == 0]
 
         if not leaf_nodes:
-            return None, 0.0, float('inf')
+            return {
+                'final_answer': None,
+                'final_path_content': "",
+                'confidence': 0.0,
+                'entropy': float('inf')
+            }
         
         # 2. Gom nhóm các đáp án tương đương (Grouping Answer Clusters)
         # Structure: { "canonical_answer_text": { "score": float, "original_texts": [] } }
+        # Value = {'score': sum_score, 'leaf_nodes': [list_of_node_ids]}
 
         clusters = {}
         for node in leaf_nodes:
@@ -34,27 +40,35 @@ class EntropySelector:
                     # Nếu tương đương, gộp vào cluster đó
                     clusters[key]['score'] += score
                     clusters[key]['original_texts'].append(content)
+                    clusters[key]['leaf_nodes'].append(node)
                     found_cluster = True
                     break
             if not found_cluster:
                 # Tạo cluster mới
                 clusters[content] = {
                     'score': score,
-                    'original_texts': [content]
+                    'original_texts': [content],
+                    'leaf_nodes': [node]
                 }
         # 3. Chuẩn hóa thành xác suất (Probability Distribution)
         # P(a) = SC(a) / Sum(SC(all))
         candidates = []
         total_sc_score = sum(c['score'] for c in clusters.values())
         if total_sc_score == 0:
-            return None, 0.0, float('inf')
+            return {
+                'final_answer': None,
+                'final_path_content': "",
+                'confidence': 0.0,
+                'entropy': float('inf')
+            }
         
         for answer, data in clusters.items():
             prob = data['score'] / total_sc_score
             candidates.append({
                 'answer': answer,
                 'prob': prob,
-                'raw_score': data['score']
+                'raw_score': data['score'],
+                'leaf_nodes': data['leaf_nodes']
             })
 
         # 4. Tính entropy của phân phối này
@@ -66,9 +80,43 @@ class EntropySelector:
         # 5. Chọn đáp án tốt nhất (Max Probability = Minimized Risk)
         best_candidate = max(candidates, key=lambda x: x['prob'])
 
+        # [QUAN TRỌNG] Tái tạo lại đường dẫn (Path Reconstruction)
+        # Trong cụm thắng cuộc, chọn ra node lá có điểm cao nhất để đại diện
+        best_leaf_nodes = best_candidate['leaf_nodes']
+        # Tìm node có final_score cao nhất trong nhóm này
+        representative_leaf = max(best_leaf_nodes, key=lambda n: graph.nodes[n].get('final_score', 0))
+
+        # Truy vết từ Root -> Leaf
+        full_path_text = self._reconstruct_path(graph, representative_leaf)
         return {
             'final_answer': best_candidate['answer'],
+            'final_path_content': full_path_text,
             'confidence': best_candidate['prob'],
             'entropy': entropy,
             'all_candidates': candidates
         }
+    
+    def _reconstruct_path(self, graph, leaf_node_id):
+        """
+        Helper: Tìm đường đi ngắn nhất từ Root đến Leaf để lấy nội dung.
+        """
+        try:
+            # Tìm đường đi từ ROOT đến node lá này
+            # Vì graph là cây/DAG, shortest_path sẽ trả về chuỗi các node cha -> con
+            path_nodes = nx.shortest_path(graph, source="ROOT", target=leaf_node_id)
+
+            # Ghép nội dung các bước lại
+            path_contents = []
+            for node in path_nodes:
+                # Bỏ qua node ROOT (thường chỉ là placeholder "Start Problem")
+                if node == "ROOT": continue
+
+                content = graph.nodes[node].get('content', '')
+                path_contents.append(content)
+            
+            # Nối lại thành chuỗi văn bản (mỗi bước 1 dòng)
+            return "\n".join(path_contents)
+        except Exception as e:
+            print(f"Error reconstructing path: {e}")
+            return ""
+        
