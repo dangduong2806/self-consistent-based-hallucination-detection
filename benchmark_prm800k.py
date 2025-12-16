@@ -59,7 +59,8 @@ def run_benchmark():
     math_eval = DeepMathMetrics()
     
     # Load Data (Thay đường dẫn file thật của bạn vào đây)
-    test_data = load_prm800k_test_set("data/prm800k_test.jsonl", limit=20) 
+    data_path = "data/raw/phase1_test.jsonl"
+    test_data = load_prm800k_test_set(data_path, limit=20) 
     
     results = []
     
