@@ -136,6 +136,7 @@ def main():
         print("="*40)
         print(f"PROBLEM: {problem_to_solve}")
         print("-" * 40)
+        print(f"FINAL PATH CONTENT: {result['final_path_content']}")
         print(f"FINAL ANSWER: {result['final_answer']}")
         print(f"CONFIDENCE (SC Score): {result['confidence']:.4f}")
         print(f"SYSTEM ENTROPY:        {result['entropy']:.4f}")
