@@ -80,7 +80,7 @@ def run_benchmark():
             )
 
             # Dù kết quả thế nào thì vẫn cứ in ra output của model
-            print(f"PROBLEM: {problem[:30]}")
+            print(f"PROBLEM: {problem}")
             print(f"Model output steps: \n{best_path_text}")
             print(f"Model last answer: \n{pred}\n")
 
