@@ -1,6 +1,6 @@
 import sympy
 from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
-from sympy import Eq, simplify, count_ops, Symbol, Number
+from sympy import Eq, simplify, count_ops, Symbol, Number, Float, Integer
 import re
 
 class DeepMathMetrics:
@@ -23,9 +23,11 @@ class DeepMathMetrics:
         # 2. Parsing Ground Truth (QUAN TRỌNG: Cần làm sạch trước)
         # Ép kiểu string để tránh lỗi nếu JSON trả về số int/float
         clean_gt_str = self._clean_latex(str(ground_truth_value_str))
+        clean_gt_str = re.sub(r'_\{?\d+\}?', '', clean_gt_str) # Bỏ _9, _{10}
         gt_expr = self._safe_parse(clean_gt_str)
 
         if not steps:
+            print(f"No found steps")
             return {"EE": 0.0, "ASS": 0.0, "TSA": 0.0}
         
         # Parse Ground Truth thành giá trị số/biểu thức (VD: x=5 -> {x: 5})
@@ -235,9 +237,14 @@ class DeepMathMetrics:
                     # Check 2 vế bằng nhau (sai số nhỏ cho float)
                     is_eq = abs(float(step_expr.lhs) - float(step_expr.rhs)) < 1e-6
                     return is_eq, True
-                else:
-                    # Nếu chỉ là biểu thức số "1+1", ko thể check đúng sai nếu ko có ngữ cảnh
-                    return False, False
+                # [FIX]: Nếu bước là 1 con số (VD: 29) và GT là số (29) -> Check luôn!
+                if isinstance(step_expr, (Number, Float, Integer)) and not gt_vars:
+                    # GT có thể là Eq(x, 29) hoặc số 29
+                    gt_val = gt_expr.rhs if isinstance(gt_expr, Eq) else gt_expr
+                    is_eq = abs(float(step_expr) - float(gt_val)) < 1e-6
+                    return is_eq, True
+                
+                return False, False
 
             # --- GROUP 2: ALGEBRAIC EQUIVALENCE (Cả 2 đều có biến) ---
             # VD: GT="2x", Step="x+x". Dùng cho bài toán rút gọn.
