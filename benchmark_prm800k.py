@@ -78,10 +78,10 @@ def run_benchmark():
                 generated_path_text= best_path_text,
                 ground_truth_value_str= gt
             )
-            
+
             # Dù kết quả thế nào thì vẫn cứ in ra output của model
             print(f"PROBLEM: {problem[:30]}")
-            print(f"Model output steps: {best_path_text}")
+            print(f"Model output steps: \n{best_path_text}")
             print(f"Model last answer: \n{pred}\n")
 
             print(f"EE: {metrics['EE']}, ASS: {metrics['ASS']}, TSA: {metrics['TSA']}")
