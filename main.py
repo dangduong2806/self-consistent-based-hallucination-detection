@@ -120,16 +120,10 @@ class ResearchPipeline:
         raw_graph = self.graph_builder.build_graph(verified_paths)
         logger.info(f"    Graph built with {raw_graph.number_of_nodes()} nodes and {raw_graph.number_of_edges()} edges.")
 
-        # --- [DEBUG PRINT] In ra cấu trúc đồ thị bước 3 ---
-        print("\n    [Visualizing Step 3: Graph Structure]")
-        # In ra các node có nhiều kết nối nhất (điểm hội tụ của các luồng suy luận)
-        # Sắp xếp theo degree (bậc)
-        top_degree_nodes = sorted(raw_graph.degree, key=lambda x: x[1], reverse=True)[:3]
-        for node_id, degree in top_degree_nodes:
-            if node_id == "ROOT": continue
-            content = raw_graph.nodes[node_id].get('content', '')[:60] # Cắt ngắn để dễ nhìn
-            count = raw_graph.nodes[node_id].get('count', 0)
-            print(f"      Node {node_id} (Freq: {count}, Degree: {degree}): '{content}...'")
+        # Gọi hàm đệ quy để in cây
+        print("Raw graph:")
+        self._print_graph_tree(raw_graph, "ROOT", indent="", visited_path=set())
+        print("\n")
 
         # ---------------------------------------------------------
         # BƯỚC 4: Structural Verification (Global Dependency)
@@ -142,25 +136,12 @@ class ResearchPipeline:
         logger.debug(f"    Top robust nodes: {[n[1].get('content') for n in top_nodes]}")
         logger.info(f"Structural Verification Graph: {refined_graph}")
 
-        # --- [DEBUG PRINT] In ra kết quả chấm điểm bước 4 ---
-        print("\n    [Visualizing Step 4: Re-weighted Scores]")
-        print(f"      {'Node Content (Truncated)':<50} | {'Local':<6} | {'Global':<6} | {'FINAL':<6}")
-        print("      " + "-"*80)
-        
-        # Lấy danh sách node kèm data
-        all_nodes = refined_graph.nodes(data=True)
-        # Sắp xếp theo điểm Final Score từ cao xuống thấp
-        sorted_nodes = sorted(all_nodes, key=lambda x: x[1].get('final_score', 0), reverse=True)
-        
-        # In Top 5 node có điểm cao nhất
-        for node_id, data in sorted_nodes[:5]:
-            if node_id == "ROOT": continue
-            content = data.get('content', '').replace('\n', ' ')[:45]
-            local_s = data.get('local_score', 0.0)
-            global_s = data.get('global_score', 0.0)
-            final_s = data.get('final_score', 0.0)
-            print(f"      {content:<50} | {local_s:.4f} | {global_s:.4f} | {final_s:.4f}")
-        print("      " + "-"*80 + "\n")
+        print("FULL REASONING GRAPH VISUALIZATION (Tree View)")
+        print("Format: [Score] Node_ID: Content")
+        print("Score = Final weighted score (Local + Global)")
+        # Gọi hàm đệ quy để in cây
+        self._print_graph_tree(refined_graph, "ROOT", indent="", visited_path=set())
+        print("\n")
 
         # ---------------------------------------------------------
         # BƯỚC 5: Global Selection (Entropy Minimization)
@@ -169,6 +150,49 @@ class ResearchPipeline:
         result = self.selector.select_answer(refined_graph)
         
         return result, sample_count
+    
+    def _print_graph_tree(self, graph, current_node, indent="", visited_path=None):
+            """
+            Hàm đệ quy in đồ thị dạng cây thư mục.
+            """
+            if visited_path is None: visited_path = set()
+            
+            # Lấy thông tin node
+            if current_node == "ROOT":
+                content = "[START PROBLEM]"
+                score = 1.0
+            else:
+                data = graph.nodes[current_node]
+                # Cắt ngắn nội dung nếu quá dài để hiển thị đẹp
+                full_content = data.get('content', '').replace('\n', ' ').strip()
+                content = (full_content[:75] + '...') if len(full_content) > 75 else full_content
+                score = data.get('final_score', 0.0)
+
+            # In node hiện tại
+            # Ký hiệu: └── cho nhánh cuối, ├── cho nhánh giữa
+            print(f"{indent}O-- [{score:.4f}] {current_node}: {content}")
+
+            # Lấy các node con
+            children = list(graph.successors(current_node))
+            
+            if not children:
+                return
+
+            # Đệ quy in con
+            # Tránh lặp vô hạn nếu đồ thị có chu trình (mặc dù graph này thường là DAG)
+            if current_node in visited_path:
+                print(f"{indent}    ( ... Merge/Loop back to existing path ... )")
+                return
+                
+            visited_path.add(current_node)
+            
+            for i, child in enumerate(children):
+                is_last = (i == len(children) - 1)
+                # Tạo thụt đầu dòng cho cấp con
+                next_indent = indent + ("    " if is_last else "|   ")
+                
+                # Gọi đệ quy
+                self._print_graph_tree(graph, child, next_indent, visited_path.copy())
 
 def main():
     # Parse Command Line Arguments
