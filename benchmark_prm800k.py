@@ -15,6 +15,7 @@ from src.step_2_verifier import LocalVerifier
 from src.step_4_graph import ReasoningGraph
 from src.step_4_structural_verifier import StructuralVerifier
 from src.step_5_selector import EntropySelector
+from main import ResearchPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +45,9 @@ def run_benchmark():
     # Load Config
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
-    
-    # Load model
-    logger.info("Initializing Llama-3-8B (4-bit)...")
-    llm = LLMEngine(config['model']['name'])
-    
-    # 3. Initialize Pipeline Components
-    sampler = AdaptiveSampler(llm, config)
-    local_verifier = LocalVerifier(config)
-    graph_builder = ReasoningGraph() # Có chứa IsomorphismEngine bên trong
-    struct_verifier = StructuralVerifier(config)
-    selector = EntropySelector()
+
+    # Load pipeline
+    pipeline = ResearchPipeline(config_path=config_path)
 
     math_eval = DeepMathMetrics()
     
@@ -74,52 +67,7 @@ def run_benchmark():
             torch.cuda.reset_peak_memory_stats()
 
             # Gọi pipeline
-            logger.info(">>> Step 1: Adaptive Sampling...")
-            raw_paths = sampler.sample(problem)
-            sample_count = len(raw_paths)
-            logger.info(">>> Step 2: Atomic & Logical Verification (SymPy + Logprobs)...")
-            verified_paths = []
-            valid_path_count = 0
-            
-            for idx, path in enumerate(raw_paths):
-                # path là list các object/dict chứa text và logprobs của từng bước
-                verified_steps = local_verifier.verify_path(path)
-                
-                # Chỉ giữ lại các path có ít nhất 1 bước đúng
-                if verified_steps:
-                    verified_paths.append(verified_steps)
-                    valid_path_count += 1
-                else:
-                    logger.debug(f"    Path {idx} rejected completely.")
-            
-            logger.info(f"    Retained {valid_path_count} valid paths after local filtering.")
-
-            if not verified_paths:
-                logger.warning("!!! No valid paths found. Pipeline aborted.")
-                return None
-            
-            # ---------------------------------------------------------
-            # BƯỚC 3: Graph Construction (Isomorphism Isomorphism)
-            # ---------------------------------------------------------
-            logger.info(">>> Step 3: Building Reasoning Graph (SymPy Isomorphism)...")
-            raw_graph = graph_builder.build_graph(verified_paths)
-            logger.info(f"    Graph built with {raw_graph.number_of_nodes()} nodes and {raw_graph.number_of_edges()} edges.")
-
-            # ---------------------------------------------------------
-            # BƯỚC 4: Structural Verification (Global Dependency)
-            # ---------------------------------------------------------
-            logger.info(">>> Step 4: Structural Verification (Centrality Reweighting)...")
-            refined_graph = struct_verifier.verify_structure(raw_graph)
-
-            # Debug: In ra một vài node quan trọng
-            top_nodes = sorted(refined_graph.nodes(data=True), key=lambda x: x[1].get('final_score', 0), reverse=True)[:3]
-            logger.debug(f"    Top robust nodes: {[n[1].get('content') for n in top_nodes]}")
-
-            # ---------------------------------------------------------
-            # BƯỚC 5: Global Selection (Entropy Minimization)
-            # ---------------------------------------------------------
-            logger.info(">>> Step 5: Final Selection (Entropy Minimization)...")
-            result = selector.select_answer(refined_graph)
+            result, sample_count = pipeline.run(problem_text=problem)
 
             end_time = time.time()
             peak_memory = torch.cuda.max_memory_allocated() / (1024 ** 2) # MB
@@ -130,6 +78,10 @@ def run_benchmark():
                 generated_path_text= best_path_text,
                 ground_truth_value_str= gt
             )
+            print(f"PROBLEM: {problem[:30]}")
+            print(f"Model output steps: {best_path_text}")
+            print(f"Model last answer: \n{pred}\n")
+
             print(f"EE: {metrics['EE']}, ASS: {metrics['ASS']}, TSA: {metrics['TSA']}")
             record = {
                 "problem": problem[:30] + "...",
