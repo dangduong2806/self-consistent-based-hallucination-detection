@@ -74,7 +74,7 @@ class DeepMathMetrics:
                     pass
             else:
                 uncheckable_steps += 1
-        print(f"Tổng số steps: {checkable_steps + uncheckable_steps}")
+        print(f"Tổng số steps: {len(steps)}")
         print(f"Số steps không check được: {uncheckable_steps}")
         tsa_score = (correct_steps / checkable_steps) if checkable_steps > 0 else 0.0
 
