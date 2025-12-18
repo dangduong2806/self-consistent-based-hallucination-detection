@@ -1,5 +1,8 @@
 import numpy as np
 from sympy import sympify, SympifyError
+import torch
+import logging
+logger = logging.getLogger(__name__)
 class LocalVerifier:
     # def verify_step(self, context, step_content, step_logprob):
     #     """
@@ -17,11 +20,12 @@ class LocalVerifier:
     #     final_score = atomic_score * logical_score
     #     return final_score
 
-    def __init__(self, config):
+    def __init__(self, config, llm_engine):
         """
         Khởi tạo Verifier với các cấu hình ngưỡng (thresholds).
         """
         self.config = config
+        self.llm = llm_engine
         
         # Lấy tham số từ config, nếu không có thì dùng giá trị mặc định
         self.atomic_enabled = config['verification'].get('atomic_check_enabled', True)
@@ -42,7 +46,9 @@ class LocalVerifier:
         # Context dùng để theo dõi chuỗi suy luận (nếu cần check logic phức tạp hơn)
         # Ở version đơn giản này, ta check từng bước độc lập dựa trên logprob và syntax.
         
-        for step in path:
+        # Context bắt đầu rỗng (hoặc là prompt bài toán gốc nếu muốn chính xác hơn)
+        current_context = "" #
+        for i, step in enumerate(path):
             step_content = step.get('text', '')
             step_logprob = step.get('logprob', -float('inf'))
             
@@ -52,19 +58,28 @@ class LocalVerifier:
                     # Nếu bước này viết sai cú pháp toán học (vd: "x + = 2") -> Dừng ngay
                     break 
 
-            # --- 2. Logical Check (Kiểm tra độ tự tin của model) ---
-            if self.logical_enabled:
-                if step_logprob < self.logprob_threshold:
-                    # Model quá phân vân về bước này -> Coi là ảo giác -> Dừng ngay
-                    # (Pruning: Cắt bỏ nhánh sai sớm để tiết kiệm)
-                    break
+            # ---------------------------------------------------
+            # 2. LOGICAL DEPENDENCY CHECK (Conditional Probability)
+            # ---------------------------------------------------
+            # Công thức: Score = P(Step_k | Context)
+            # Bỏ qua bước 1 nếu muốn (vì nó phụ thuộc đề bài, chưa có context)
+            # Nhưng tốt nhất vẫn nên tính để xem nó có khớp với tri thức nội tại ko
+
+            logic_score = self._compute_step_score(current_context, step_content)
+            # Log debug để bạn tune threshold
+            logger.info(f"Step {i+1}: {step_content[:20]}... | Score: {logic_score:.4f}")
+            if logic_score < self.logprob_threshold:
+                logger.debug(f"Step {i+1} failed LOGICAL check. Score {logic_score:.4f} < {self.logprob_threshold}")
+                break # Cắt nhánh (Pruning)
             
             # Nếu qua được cả 2 vòng check thì thêm vào danh sách hợp lệ
             verified_steps.append({
                 'content': step_content,
-                'confidence': np.exp(step_logprob), # Chuyển logprob về xác suất (0-1)
+                'confidence': np.exp(logic_score), # Chuyển logprob về xác suất (0-1)
                 'logprob': step_logprob
             })
+            # Cập nhật context cho vòng lặp sau
+            current_context += step_content + "\n"
             
         return verified_steps
 
@@ -91,3 +106,56 @@ class LocalVerifier:
             # nếu ta cực kỳ khắt khe. Ở mức độ nghiên cứu này, ta có thể return True
             # nhưng log lại warning.
             return True # Tạm thời cho qua để tránh lọc nhầm lời văn giải thích
+        
+    def _compute_step_score(self, context, step_text):
+        """
+        IMPLEMENTATION CỦA CÔNG THỨC LOGICAL CHECK TRONG PAPER.
+        
+        Tính: Average Log-Likelihood của `step_text` KHI BIẾT `context`.
+        """
+        # 1. Tokenize Context và Step riêng biệt để biết độ dài
+        # Lưu ý: Cần add_special_tokens=False để tránh duplicate BOS token
+        context_ids = self.llm.tokenizer(context, return_tensors="pt", add_special_tokens=False).input_ids
+        step_ids = self.llm.tokenizer(step_text, return_tensors="pt", add_special_tokens=False).input_ids
+
+        context_len = context_ids.shape[1]
+        step_len = step_ids.shape[1]
+
+        # 2. Ghép lại thành input hoàn chỉnh: [Context, Step]
+        input_ids = torch.cat([context_ids, step_ids], dim=1).to(self.llm.model.device)
+
+        # 3. Chạy Model (Forward pass) để lấy Logits
+        with torch.no_grad():
+            outputs = self.llm.model(input_ids)
+            logits = outputs.logits # [1, seq_len, vocab_size]
+
+        # 4. Shift Logits và Labels để tính Loss
+        # Logits ở vị trí t dùng để dự đoán token ở t+1
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = input_ids[..., 1:].contiguous()
+
+        # 5. Tính CrossEntropyLoss cho TỪNG token (reduction='none')
+        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+        all_token_losses = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+        # 6. MASKING (Cực kỳ quan trọng)
+        # Chúng ta chỉ quan tâm loss của phần Step, không quan tâm model thuộc context hay không.
+        # Phần Step bắt đầu từ vị trí: context_len - 1 (do đã shift)
+        # Độ dài cần lấy: step_len
+
+        # Start index trong mảng loss (đã shift 1) là context_len - 1
+        # Nhưng nếu context rỗng (bước 1), start_idx = 0
+        start_idx = max(0, context_len - 1)
+
+        # Lấy loss của riêng phần step
+        step_token_losses = all_token_losses[start_idx:]
+
+        # Nếu step quá ngắn hoặc lỗi, return score thấp
+        if len(step_token_losses) == 0:
+            return -999.0
+        
+        # 7. Tính điểm trung bình (Average Log-Likelihood)
+        # Loss là -log(P), nên Log-Likelihood = -Loss
+        avg_log_likelihood = -torch.mean(step_token_losses).item()
+
+        return avg_log_likelihood
