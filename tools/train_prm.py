@@ -58,7 +58,7 @@ def train():
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2)
     
     # Load dataset (Bạn cần trỏ đúng file phase2_train.jsonl)
-    train_dataset = PRMDataset("path/to/prm800k_phase2_train.jsonl", tokenizer)
+    train_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer)
     
     args = TrainingArguments(
         output_dir=OUTPUT_DIR,
