@@ -17,9 +17,19 @@ class PRMDataset(Dataset):
         with open(jsonl_path, 'r') as f:
             for line in f:
                 item = json.loads(line)
+                
+                # Kiểm tra dữ liệu đầu vào cơ bản
+                if 'question' not in item or 'problem' not in item['question']:
+                    continue
+                if 'label' not in item or 'steps' not in item['label'] or item['label']['steps'] is None:
+                    continue
+
                 problem = item['question']['problem']
 
                 for step in item['label']['steps']:
+                    # Kiểm tra nếu completions bị None thì bỏ qua
+                    if step.get('completions') is None:
+                        continue
                     for comp in step['completions']:
                         if comp['rating'] is None:
                             continue
