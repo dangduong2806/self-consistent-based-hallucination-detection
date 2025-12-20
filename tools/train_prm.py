@@ -31,7 +31,7 @@ class PRMDataset(Dataset):
                             'text': text,
                             'label': label
                         })
-        print("Loaded PRM samples:", len(self.samples))
+        print("Loaded PRM samples:", len(self.data))
 
     def __len__(self):
         return len(self.data)
