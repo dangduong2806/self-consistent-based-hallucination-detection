@@ -1,6 +1,6 @@
 import json
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, random_split
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
 import yaml
 
@@ -73,24 +73,46 @@ def train():
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2)
     
     # Load dataset (Bạn cần trỏ đúng file phase2_train.jsonl)
-    train_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer)
+    full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer)
     
+    # Chia 90% train, 10% validation
+    train_size = int(0.9 * len(full_dataset))
+    val_size = len(full_dataset) - train_size
+    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+    
+    print(f"Train size: {len(train_dataset)}, Val size: {len(val_dataset)}")
+
     args = TrainingArguments(
         output_dir=OUTPUT_DIR,
         num_train_epochs=3,
         per_device_train_batch_size=8,
+        per_device_eval_batch_size=8,
         eval_strategy="epoch",
         save_strategy="epoch",
+        logging_steps=50,
         learning_rate=2e-5,
-        fp16=True # Tiết kiệm VRAM
+        fp16=True, # Tiết kiệm VRAM
+        load_best_model_at_end=True,
+        metric_for_best_model="accuracy",
+        report_to="none", # Tránh lỗi nếu bạn chưa cài wandb
+        greater_is_better=True, # accuracy càng cao càng tốt
     )
+
+    # Định nghĩa hàm tính toán độ chính xác (Accuracy) cho tập Eval
+    def compute_metrics(eval_pred):
+        logits, labels = eval_pred
+        predictions = torch.argmax(torch.tensor(logits), dim=-1)
+        return {"accuracy": (predictions == torch.tensor(labels)).float().mean().item()}
     
     trainer = Trainer(
         model=model,
         args=args,
         train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=compute_metrics
     )
     
+    print("Bắt đầu huán luyện")
     trainer.train()
     trainer.save_model(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
