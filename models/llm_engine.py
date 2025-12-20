@@ -84,7 +84,7 @@ class LLMEngine:
             else:
                 score = 0.0
 
-            results.append((text, score))
+            results.append((text, score)) # Score ở đây là mang giá trị log-prob
 
         return results
     
