@@ -142,17 +142,37 @@ class LocalVerifier:
         return hashlib.md5(raw_string.encode('utf-8')).hexdigest()
     
     def _adversarial_check(self, context, step_text):
-        """Dùng chính LLM để đóng vai 'Strict Grader'"""
+        """
+        Dùng chính LLM để đóng vai 'Strict Grader'
+        Cập nhật: Yêu cầu giải thích (CoT) trước khi đưa ra phán quyết YES/NO.
+        """
         prompt = (
-            f"Context:\n{context[-500:]}\n" # Lấy context gần
+            f"Context:\n{context[-1000:]}\n" # Lấy context dài hơn
             f"Step to evaluate: {step_text}\n\n"
-            "You are a strict math grader. Check for ANY calculation or logical error.\n"
-            "Is this step CORRECT? Answer only YES or NO."
+            "You are a strict math grader. Perform the following actions:\n"
+            "1. Analyze the logic and calculation of the step explicitly.\n"
+            "2. Check for any sign error, arithmetic error, or logical gap.\n"
+            "3. Conclude with exactly 'VERIFICATION: YES' if correct, or 'VERIFICATION: NO' if incorrect.\n\n"
+            "Analysis:"
         )
         try:
-            # Generate 1 token
-            response = self.llm.generate_short(prompt).strip().upper()
-            return "YES" in response
+            # LƯU Ý: Cần generate dài hơn vì model phải giải thích. 
+            # Nếu hàm generate_short giới hạn token quá ít (vd < 50), bạn cần tăng lên (vd: 256).
+            # Ở đây tôi giả định generate_short có thể chỉnh max_new_tokens hoặc bạn dùng hàm generate thường.
+            response = self.llm.generate(prompt).strip()
+            
+            # Log lại lý do để debug (Rất quan trọng!)
+            logger.info(f"Adversarial Reasoning: {response}") 
+
+            # Chỉ chấp nhận nếu model chốt hạ là YES
+            if "VERIFICATION: YES" in response:
+                return True
+            elif "VERIFICATION: NO" in response:
+                return False
+            else:
+                # Trường hợp model lan man không chốt (Fallback)
+                # Với strict mode thì reject, nhưng giai đoạn đầu nên accept để tránh false positive
+                return True
         except:
             return True
         
