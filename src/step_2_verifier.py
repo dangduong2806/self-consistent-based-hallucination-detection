@@ -102,6 +102,8 @@ class LocalVerifier:
                     if prm_prob < 0.5: 
                         logger.warning(f"Step {i+1} FAIL: PRM Model rejected (Prob {prm_prob:.4f}).")
                         is_valid_step = False
+                else:
+                    prm_prob = 0.29
                 
                 self.verification_cache[cache_key] = {
                     'logic_score': logic_score,
