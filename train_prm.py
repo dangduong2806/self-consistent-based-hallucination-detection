@@ -173,8 +173,8 @@ def train():
     full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer, max_len=256)
     
     # Chia 90% train, 10% validation
-    train_size = int(0.9 * len(full_dataset))
-    val_size = len(full_dataset) - train_size
+    train_size = int(0.6 * len(full_dataset))
+    val_size = (len(full_dataset) - train_size) // 2
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
     
     print(f"Train size: {len(train_dataset)}, Val size: {len(val_dataset)}")
@@ -183,9 +183,9 @@ def train():
     args = TrainingArguments(
         output_dir=OUTPUT_DIR,
         num_train_epochs=3,              # DeBERTa cần train kỹ hơn chút (3-5 epochs)
-        per_device_train_batch_size=16,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
-        per_device_eval_batch_size=16,
-        gradient_accumulation_steps=2,   # Tích lũy gradient để batch size thực tế = 16
+        per_device_train_batch_size=8,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
+        per_device_eval_batch_size=8,
+        gradient_accumulation_steps=4,   # Tích lũy gradient để batch size thực tế = 16
         gradient_checkpointing=False,     # <--- CỰC KỲ QUAN TRỌNG: Tiết kiệm 50-70% VRAM (Đổi lại tốc độ train sẽ chậm hơn khoảng 20%)
         # gradient_checkpointing_kwargs={"use_reentrant": False}, # <--- THÊM DÒNG NÀY (Thuốc đặc trị)
         learning_rate=2e-5,              # QUAN TRỌNG: LR thấp cho DeBERTa
