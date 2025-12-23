@@ -225,9 +225,29 @@ class LocalVerifier:
             # probs[0][1] = Neutral
             # probs[0][2] = Good
             
-            # Logic: Điểm = Xác suất Tốt (Có thể trừ xác suất Xấu nếu muốn gắt hơn)
-            score_correct = probs[0][2].item()        
-        return score_correct
+            # probs[0] = [P_Bad, P_Neutral, P_Good]
+            bad_score = probs[0][0].item()
+            neutral_score = probs[0][1].item()
+            good_score = probs[0][2].item()
+        
+        # --- LOGIC QUYẾT ĐỊNH (Threshold Strategy) ---
+        # Ngưỡng cứng: Bạn nên để 0.5 vì model chưa học sâu
+        HARD_THRESHOLD = 0.5 
+        
+        logger.info(f"PRM Scores -> Bad: {bad_score:.3f} | Neu: {neutral_score:.3f} | Good: {good_score:.3f}")
+
+        # TRƯỜNG HỢP 1: Tự tin cao (Lớn hơn 0.5) -> Chắc chắn đúng
+        if good_score >= HARD_THRESHOLD:
+            return good_score # Trả về điểm cao
+            
+        # TRƯỜNG HỢP 2: "Cứu vớt" (Rescue Logic)
+        # Model train ít dữ liệu hay bị phân vân giữa Good và Neutral.
+        # Nếu Good > Bad gấp 1.5 lần VÀ Good > 0.35 (không quá thấp) -> Vẫn cho qua
+        if good_score > (bad_score * 1.5) and good_score > 0.35:
+            logger.info("PRM: Score thấp nhưng Good > Bad đáng kể => CHO QUA (Rescue).")
+            return 0.51 # Trả về vừa đủ qua ngưỡng
+            
+        return good_score
 
 
     def _check_atomic_validity(self, text):
