@@ -10,6 +10,7 @@ config_path = "configs/main_config.yaml"
 class PRMDataset(Dataset):
     def __init__(self, jsonl_path, tokenizer, max_len=512):    
         self.data = []
+        self.tokenized_data = []
         self.tokenizer = tokenizer
         self.max_len = max_len
 
@@ -70,25 +71,60 @@ class PRMDataset(Dataset):
                     import traceback
                     traceback.print_exc()
 
-        print("Loaded PRM samples:", len(self.data))
+        print(f"✅ Đã đọc xong {len(self.data)} mẫu raw. Bắt đầu Tokenize hàng loạt...")
+
+        # BƯỚC 2: Tokenize Hàng loạt (Batch Tokenization) - Tốc độ X100 lần
+        # Thay vì tokenize từng dòng, ta gom lại xử lý luôn
+        batch_size = 1000
+        for i in range(0, len(self.data), batch_size):
+            batch = self.data[i : i + batch_size]
+            texts = [x['text'] for x in batch]
+            labels = [x['label'] for x in batch]
+            
+            # Tokenize batch này
+            encodings = tokenizer(
+                texts,
+                truncation=True,
+                max_length=max_len,
+                add_special_tokens=True,
+                return_attention_mask=True,
+                # KHÔNG padding ở đây để tiết kiệm RAM, để DataCollator lo
+            )
+            
+            # Lưu vào self.data
+            for j in range(len(texts)):
+                self.tokenized_data.append({
+                    'input_ids': encodings['input_ids'][j],
+                    'attention_mask': encodings['attention_mask'][j],
+                    'label': labels[j]
+                })
+
+        print(f"🎉 Sẵn sàng train! Tổng số mẫu: {len(self.tokenized_data)}")
 
     def __len__(self):
         return len(self.data)
 
+    # def __getitem__(self, idx):
+    #     item = self.data[idx]
+    #     encoding = self.tokenizer(
+    #         item['text'],
+    #         truncation=True,
+    #         max_length=self.max_len,
+    #         # padding="max_length",
+    #         # return_tensors="pt"
+    #     )
+    #     return {
+    #         "input_ids": encoding["input_ids"],
+    #         "attention_mask": encoding["attention_mask"],
+    #         # "labels": torch.tensor(item['label'], dtype=torch.long)
+    #         "labels": item['label']
+    #     }
     def __getitem__(self, idx):
-        item = self.data[idx]
-        encoding = self.tokenizer(
-            item['text'],
-            truncation=True,
-            max_length=self.max_len,
-            # padding="max_length",
-            # return_tensors="pt"
-        )
+        # Hàm này giờ chỉ việc lấy dữ liệu có sẵn, không cần tính toán gì cả -> Siêu nhanh
         return {
-            "input_ids": encoding["input_ids"],
-            "attention_mask": encoding["attention_mask"],
-            # "labels": torch.tensor(item['label'], dtype=torch.long)
-            "labels": item['label']
+            "input_ids": self.tokenized_data[idx]['input_ids'],
+            "attention_mask": self.tokenized_data[idx]['attention_mask'],
+            "labels": self.tokenized_data[idx]['label']
         }
 
 def train():
@@ -99,7 +135,7 @@ def train():
     MODEL_NAME = config['tool']['name1']
     OUTPUT_DIR = config['tool']['output_dir1']
     
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True) # tokenize nhanh hơn  
     
     # --- SỬA QUAN TRỌNG: num_labels=3 ---
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -163,7 +199,7 @@ def train():
         save_total_limit=2,              # Chỉ giữ 2 checkpoint tốt nhất để tiết kiệm ổ cứng
         report_to="none",
         # Thêm dòng này để DataLoader load dữ liệu nhanh hơn
-        dataloader_num_workers=2
+        dataloader_num_workers=4
     )
 
     # Collator padding động
