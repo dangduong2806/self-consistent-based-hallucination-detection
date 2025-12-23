@@ -150,7 +150,7 @@ class DeepMathMetrics:
                 for m in model_sols:
                     for g in golden_sols:
                         try:
-                            if abs(float(m) - float(g)) < 1e-6:
+                            if abs(float(m) - float(g)) < 1e-7:
                                 matched = True; break
                         except: pass
                     if matched: break
@@ -158,10 +158,19 @@ class DeepMathMetrics:
 
             # Cách 2: Symbolic Equivalence (Fallback cho bài toán rút gọn)
             # VD: Model "x+x", Golden "2x"
-            diff = simplify(model_final_expr - golden_final_expr) # Lưu ý: nếu là Eq thì cần xử lý lhs-rhs
-            if diff == 0: return 1.0
-            
-        except:
+            if not isinstance(model_final_expr, Eq) and not isinstance(golden_final_expr, Eq):
+                diff = simplify(model_final_expr - golden_final_expr) # Lưu ý: nếu là Eq thì cần xử lý lhs-rhs
+                if diff == 0: return 1.0
+
+            # Nếu là Eq, chuyển thành biểu thức lhs - rhs trước khi so sánh
+            if isinstance(model_final_expr, Eq) and isinstance(golden_final_expr, Eq):
+                diff = simplify((model_final_expr.lhs - model_final_expr.rhs) - (golden_final_expr.lhs-golden_final_expr.rhs))
+                if diff == 0:
+                    return 1.0
+        except Exception as e:
+            print(f"Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()
             pass
             
         return 0.0
@@ -192,7 +201,10 @@ class DeepMathMetrics:
             # Nếu dài dòng hơn, phạt điểm
             # Công thức: 1 - (phần thừa / phần gốc)
             return max(0.0, 1.0 - (ops_generated - ops_canonical) / (ops_generated + 1e-6))
-        except:
+        except Exception as e:
+            print(f"Error details: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return 0.0
     
     def _check_tsa_step(self, step_expr, gt_final_expr, golden_exprs):
@@ -213,7 +225,7 @@ class DeepMathMetrics:
                  for s in step_sols:
                     for t in target_sols:
                         try:
-                            if abs(float(s) - float(t)) < 1e-6:
+                            if abs(float(s) - float(t)) < 1e-7:
                                 return True # Có khớp
                         except: pass
         return False
