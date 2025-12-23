@@ -162,20 +162,20 @@ class LocalVerifier:
             # LƯU Ý: Cần generate dài hơn vì model phải giải thích. 
             # Nếu hàm generate_short giới hạn token quá ít (vd < 50), bạn cần tăng lên (vd: 256).
             # Ở đây tôi giả định generate_short có thể chỉnh max_new_tokens hoặc bạn dùng hàm generate thường.
-            response = self.llm.generate(prompt).strip()
+            response = self.llm.generate(prompt)[0][0].strip()
             
             # Log lại lý do để debug (Rất quan trọng!)
             logger.info(f"Adversarial Reasoning: {response}") 
 
             # Chỉ chấp nhận nếu model chốt hạ là YES
-            if "VERIFICATION: YES" in response[0][0]:
+            if "VERIFICATION: YES" in response:
                 return True
-            elif "VERIFICATION: NO" in response[0][0]:
+            elif "VERIFICATION: NO" in response:
                 return False
             else:
                 # Trường hợp model lan man không chốt (Fallback)
                 # Với strict mode thì reject, nhưng giai đoạn đầu nên accept để tránh false positive
-                logger.warning(f"Adversarial đang lan ma => trả về True")
+                logger.warning(f"Adversarial đang lan man => trả về True")
                 return True
         except Exception as e:
             # --- [SỬA ĐOẠN NÀY] ---
