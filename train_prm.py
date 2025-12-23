@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import Dataset, random_split
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, DataCollatorWithPadding
 import yaml
+import gc
 
 # Cấu hình
 config_path = "configs/main_config.yaml"
@@ -75,7 +76,7 @@ class PRMDataset(Dataset):
 
         # BƯỚC 2: Tokenize Hàng loạt (Batch Tokenization) - Tốc độ X100 lần
         # Thay vì tokenize từng dòng, ta gom lại xử lý luôn
-        batch_size = 1000
+        batch_size = 2000
         for i in range(0, len(self.data), batch_size):
             batch = self.data[i : i + batch_size]
             texts = [x['text'] for x in batch]
@@ -99,6 +100,9 @@ class PRMDataset(Dataset):
                     'label': labels[j]
                 })
 
+        # BƯỚC 3: DỌN DẸP RAM (QUAN TRỌNG NHẤT)
+        del self.data
+        gc.collect() # Ép Python giải phóng RAM ngay lập tức
         print(f"🎉 Sẵn sàng train! Tổng số mẫu: {len(self.tokenized_data)}")
 
     def __len__(self):
@@ -166,7 +170,7 @@ def train():
     # # -----------------------------------------------------
     
     # Load dataset (Bạn cần trỏ đúng file phase2_train.jsonl)
-    full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer, max_len=384)
+    full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer, max_len=256)
     
     # Chia 90% train, 10% validation
     train_size = int(0.9 * len(full_dataset))
@@ -179,9 +183,9 @@ def train():
     args = TrainingArguments(
         output_dir=OUTPUT_DIR,
         num_train_epochs=3,              # DeBERTa cần train kỹ hơn chút (3-5 epochs)
-        per_device_train_batch_size=16,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
-        per_device_eval_batch_size=16,
-        gradient_accumulation_steps=2,   # Tích lũy gradient để batch size thực tế = 16
+        per_device_train_batch_size=32,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
+        per_device_eval_batch_size=32,
+        gradient_accumulation_steps=1,   # Tích lũy gradient để batch size thực tế = 16
         gradient_checkpointing=False,     # <--- CỰC KỲ QUAN TRỌNG: Tiết kiệm 50-70% VRAM (Đổi lại tốc độ train sẽ chậm hơn khoảng 20%)
         # gradient_checkpointing_kwargs={"use_reentrant": False}, # <--- THÊM DÒNG NÀY (Thuốc đặc trị)
         learning_rate=2e-5,              # QUAN TRỌNG: LR thấp cho DeBERTa
