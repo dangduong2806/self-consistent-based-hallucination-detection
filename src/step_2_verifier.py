@@ -32,6 +32,7 @@ class LocalVerifier:
                 # Ép kiểu half precision (fp16) để chạy nhanh hơn và tốn ít VRAM hơn trên GPU
                 if self.prm_device == "cuda":
                     self.prm_model.half()
+                logger.info(f"Load và ép kiểu fp16 thành công model pretrained")
             except Exception as e:
                 logger.warning(f"Không load được PRM lên GPU, chuyển về CPU. Lỗi: {e}")
                 self.prm_device = "cpu"
