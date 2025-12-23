@@ -109,6 +109,25 @@ def train():
         ignore_mismatched_sizes=True
     )
     
+    # --- [CHÈN ĐOẠN NÀY ĐỂ FIX LỖI BACKWARD & OOM] ---
+    print("Applying DeBERTa Gradient Checkpointing Fix...")
+    
+    # 1. Tắt cache (Bắt buộc khi train)
+    model.config.use_cache = False 
+    
+    # 2. Bật checkpointing thủ công trên model
+    model.gradient_checkpointing_enable()
+    
+    # 3. THUỐC ĐẶC TRỊ: Đảm bảo Input Embeddings nhận Gradient
+    # Nếu không có dòng này, đồ thị tính toán sẽ bị ngắt quãng gây ra lỗi "backward second time"
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    else:
+        def make_inputs_require_grad(module, input, output):
+            output.requires_grad_(True)
+        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+    # -----------------------------------------------------
+    
     # Load dataset (Bạn cần trỏ đúng file phase2_train.jsonl)
     full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer)
     
