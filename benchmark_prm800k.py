@@ -52,7 +52,7 @@ def run_benchmark():
     
     # Load Data (Thay đường dẫn file thật của bạn vào đây)
     data_path = "data/raw/phase1_test.jsonl"
-    test_data = load_prm800k_test_set(data_path, limit=7) 
+    test_data = load_prm800k_test_set(data_path, limit=3) 
     
     results = []
     
