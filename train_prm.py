@@ -103,6 +103,8 @@ class PRMDataset(Dataset):
         # BƯỚC 3: DỌN DẸP RAM (QUAN TRỌNG NHẤT)
         del self.data
         gc.collect() # Ép Python giải phóng RAM ngay lập tức
+        n = len(self.tokenized_data)
+        self.tokenized_data = self.tokenized_data[: 1 * n // 6]
         print(f"🎉 Sẵn sàng train! Tổng số mẫu: {len(self.tokenized_data)}")
 
     def __len__(self):
@@ -173,8 +175,8 @@ def train():
     full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer, max_len=256)
     
     # Chia 90% train, 10% validation
-    train_size = int(0.6 * len(full_dataset))
-    val_size = (len(full_dataset) - train_size) // 2
+    train_size = int(0.7 * len(full_dataset))
+    val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
     
     print(f"Train size: {len(train_dataset)}, Val size: {len(val_dataset)}")
