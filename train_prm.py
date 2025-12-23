@@ -4,7 +4,9 @@ from torch.utils.data import Dataset, random_split
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, DataCollatorWithPadding
 import yaml
 import gc
-
+import matplotlib.pyplot as plt # Thêm thư viện vẽ hình
+import os
+import random
 # Cấu hình
 config_path = "configs/main_config.yaml"
 
@@ -103,8 +105,13 @@ class PRMDataset(Dataset):
         # BƯỚC 3: DỌN DẸP RAM (QUAN TRỌNG NHẤT)
         del self.data
         gc.collect() # Ép Python giải phóng RAM ngay lập tức
+
+        # Phải xáo trộn trước khi cắt, nếu không model sẽ bị bias chủ đề
+        print("🔀 Đang xáo trộn dữ liệu để đảm bảo tính ngẫu nhiên...")
+        random.shuffle(self.tokenized_data)
+
         n = len(self.tokenized_data)
-        self.tokenized_data = self.tokenized_data[: 1 * n // 6]
+        self.tokenized_data = self.tokenized_data[: 1 * n // 4]
         print(f"🎉 Sẵn sàng train! Tổng số mẫu: {len(self.tokenized_data)}")
 
     def __len__(self):
@@ -132,6 +139,61 @@ class PRMDataset(Dataset):
             "attention_mask": self.tokenized_data[idx]['attention_mask'],
             "labels": self.tokenized_data[idx]['label']
         }
+    
+# --- HÀM VẼ BIỂU ĐỒ ---
+def plot_training_history(log_history, output_dir):
+    """
+    Hàm vẽ biểu đồ Loss và Accuracy từ log_history của Trainer
+    """
+    train_loss = []
+    train_steps = []
+    val_loss = []
+    val_steps = []
+    val_acc = []
+    val_acc_steps = []
+
+    for entry in log_history:
+        if 'loss' in entry and 'step' in entry:
+            train_loss.append(entry['loss'])
+            train_steps.append(entry['step'])
+        if 'eval_loss' in entry:
+            val_loss.append(entry['eval_loss'])
+            val_steps.append(entry['step'])
+        if 'eval_accuracy' in entry:
+            val_acc.append(entry['eval_accuracy'])
+            val_acc_steps.append(entry['step'])
+
+    # Tạo figure với 2 biểu đồ con
+    plt.figure(figsize=(12, 5))
+
+    # Biểu đồ 1: Loss
+    plt.subplot(1, 2, 1)
+    plt.plot(train_steps, train_loss, label='Training Loss', color='blue', alpha=0.6)
+    if val_loss:
+        plt.plot(val_steps, val_loss, label='Validation Loss', color='red', marker='o')
+    plt.xlabel('Steps')
+    plt.ylabel('Loss')
+    plt.title('Training & Validation Loss')
+    plt.legend()
+    plt.grid(True)
+
+    # Biểu đồ 2: Accuracy
+    plt.subplot(1, 2, 2)
+    if val_acc:
+        plt.plot(val_acc_steps, val_acc, label='Validation Accuracy', color='green', marker='o')
+        plt.xlabel('Steps')
+        plt.ylabel('Accuracy')
+        plt.title('Validation Accuracy Over Time')
+        plt.legend()
+        plt.grid(True)
+    else:
+        plt.text(0.5, 0.5, 'No Accuracy Data', horizontalalignment='center')
+
+    save_path = os.path.join(output_dir, "training_metrics.png")
+    plt.tight_layout()
+    plt.savefig(save_path)
+    print(f"📊 Đã lưu biểu đồ training tại: {save_path}")
+    plt.close()
 
 def train():
     # 1. Load Config
@@ -172,10 +234,10 @@ def train():
     # # -----------------------------------------------------
     
     # Load dataset (Bạn cần trỏ đúng file phase2_train.jsonl)
-    full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer, max_len=256)
+    full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer, max_len=512)
     
     # Chia 90% train, 10% validation
-    train_size = int(0.7 * len(full_dataset))
+    train_size = int(0.9 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
     
@@ -184,10 +246,10 @@ def train():
     # 5. Training Arguments
     args = TrainingArguments(
         output_dir=OUTPUT_DIR,
-        num_train_epochs=3,              # DeBERTa cần train kỹ hơn chút (3-5 epochs)
-        per_device_train_batch_size=8,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
-        per_device_eval_batch_size=8,
-        gradient_accumulation_steps=4,   # Tích lũy gradient để batch size thực tế = 16
+        num_train_epochs=5,              # DeBERTa cần train kỹ hơn chút (3-5 epochs)
+        per_device_train_batch_size=4,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
+        per_device_eval_batch_size=4,
+        gradient_accumulation_steps=8,   # Tích lũy gradient để batch size thực tế = 16
         gradient_checkpointing=False,     # <--- CỰC KỲ QUAN TRỌNG: Tiết kiệm 50-70% VRAM (Đổi lại tốc độ train sẽ chậm hơn khoảng 20%)
         # gradient_checkpointing_kwargs={"use_reentrant": False}, # <--- THÊM DÒNG NÀY (Thuốc đặc trị)
         learning_rate=2e-5,              # QUAN TRỌNG: LR thấp cho DeBERTa
@@ -232,6 +294,12 @@ def train():
     trainer.save_model(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
     print("PRM Specialist Model trained and saved!")
+
+    # --- VẼ BIỂU ĐỒ ---
+    # Lấy lịch sử log để vẽ
+    plot_training_history(trainer.state.log_history, OUTPUT_DIR)
+    
+    print("PRM Specialist Model trained, saved and metrics plotted!")
 
 if __name__ == "__main__":
     train() # Uncomment để chạy
