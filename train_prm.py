@@ -108,7 +108,7 @@ def train():
         label2id={"Bad": 0, "Neutral": 1, "Good": 2},
         ignore_mismatched_sizes=True
     )
-    
+
     # --- [CHÈN ĐOẠN NÀY ĐỂ FIX LỖI BACKWARD & OOM] ---
     print("Applying DeBERTa Gradient Checkpointing Fix...")
     
@@ -145,9 +145,8 @@ def train():
         per_device_train_batch_size=2,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
         per_device_eval_batch_size=2,
         gradient_accumulation_steps=8,   # Tích lũy gradient để batch size thực tế = 16
-        gradient_checkpointing=True,     # <--- CỰC KỲ QUAN TRỌNG: Tiết kiệm 50-70% VRAM
-                                         # (Đổi lại tốc độ train sẽ chậm hơn khoảng 20%)
-
+        gradient_checkpointing=True,     # <--- CỰC KỲ QUAN TRỌNG: Tiết kiệm 50-70% VRAM (Đổi lại tốc độ train sẽ chậm hơn khoảng 20%)
+        gradient_checkpointing_kwargs={"use_reentrant": False}, # <--- THÊM DÒNG NÀY (Thuốc đặc trị)
         learning_rate=2e-5,              # QUAN TRỌNG: LR thấp cho DeBERTa
         weight_decay=0.01,
         warmup_ratio=0.1,                # Warmup giúp ổn định training đầu
