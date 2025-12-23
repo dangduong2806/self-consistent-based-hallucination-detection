@@ -81,13 +81,14 @@ class PRMDataset(Dataset):
             item['text'],
             truncation=True,
             padding="max_length",
-            max_length=self.max_len,
-            return_tensors="pt"
+            # max_length=self.max_len,
+            # return_tensors="pt"
         )
         return {
-            "input_ids": encoding["input_ids"].flatten(),
+            "input_ids": encoding["input_ids"],
             "attention_mask": encoding["attention_mask"].flatten(),
-            "labels": torch.tensor(item['label'], dtype=torch.long)
+            # "labels": torch.tensor(item['label'], dtype=torch.long)
+            "labels": item['label']
         }
 
 def train():
@@ -109,27 +110,27 @@ def train():
         ignore_mismatched_sizes=True
     )
 
-    # --- [CHÈN ĐOẠN NÀY ĐỂ FIX LỖI BACKWARD & OOM] ---
-    print("Applying DeBERTa Gradient Checkpointing Fix...")
+    # # --- [CHÈN ĐOẠN NÀY ĐỂ FIX LỖI BACKWARD & OOM] ---
+    # print("Applying DeBERTa Gradient Checkpointing Fix...")
     
-    # 1. Tắt cache (Bắt buộc khi train)
-    model.config.use_cache = False 
+    # # 1. Tắt cache (Bắt buộc khi train)
+    # model.config.use_cache = False 
     
-    # 2. Bật checkpointing thủ công trên model
-    model.gradient_checkpointing_enable()
+    # # 2. Bật checkpointing thủ công trên model
+    # model.gradient_checkpointing_enable()
     
-    # 3. THUỐC ĐẶC TRỊ: Đảm bảo Input Embeddings nhận Gradient
-    # Nếu không có dòng này, đồ thị tính toán sẽ bị ngắt quãng gây ra lỗi "backward second time"
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    else:
-        def make_inputs_require_grad(module, input, output):
-            output.requires_grad_(True)
-        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-    # -----------------------------------------------------
+    # # 3. THUỐC ĐẶC TRỊ: Đảm bảo Input Embeddings nhận Gradient
+    # # Nếu không có dòng này, đồ thị tính toán sẽ bị ngắt quãng gây ra lỗi "backward second time"
+    # if hasattr(model, "enable_input_require_grads"):
+    #     model.enable_input_require_grads()
+    # else:
+    #     def make_inputs_require_grad(module, input, output):
+    #         output.requires_grad_(True)
+    #     model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+    # # -----------------------------------------------------
     
     # Load dataset (Bạn cần trỏ đúng file phase2_train.jsonl)
-    full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer)
+    full_dataset = PRMDataset("data/raw/phase1_train.jsonl", tokenizer, max_len=384)
     
     # Chia 90% train, 10% validation
     train_size = int(0.9 * len(full_dataset))
@@ -141,18 +142,18 @@ def train():
     # 5. Training Arguments
     args = TrainingArguments(
         output_dir=OUTPUT_DIR,
-        num_train_epochs=4,              # DeBERTa cần train kỹ hơn chút (3-5 epochs)
-        per_device_train_batch_size=8,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
-        per_device_eval_batch_size=8,
-        gradient_accumulation_steps=4,   # Tích lũy gradient để batch size thực tế = 16
-        gradient_checkpointing=True,     # <--- CỰC KỲ QUAN TRỌNG: Tiết kiệm 50-70% VRAM (Đổi lại tốc độ train sẽ chậm hơn khoảng 20%)
-        gradient_checkpointing_kwargs={"use_reentrant": False}, # <--- THÊM DÒNG NÀY (Thuốc đặc trị)
-        learning_rate=3e-5,              # QUAN TRỌNG: LR thấp cho DeBERTa
+        num_train_epochs=3,              # DeBERTa cần train kỹ hơn chút (3-5 epochs)
+        per_device_train_batch_size=16,   # 4 hoặc 8 tùy VRAM (4 là an toàn cho GPU 8-12GB)
+        per_device_eval_batch_size=16,
+        gradient_accumulation_steps=2,   # Tích lũy gradient để batch size thực tế = 16
+        gradient_checkpointing=False,     # <--- CỰC KỲ QUAN TRỌNG: Tiết kiệm 50-70% VRAM (Đổi lại tốc độ train sẽ chậm hơn khoảng 20%)
+        # gradient_checkpointing_kwargs={"use_reentrant": False}, # <--- THÊM DÒNG NÀY (Thuốc đặc trị)
+        learning_rate=2e-5,              # QUAN TRỌNG: LR thấp cho DeBERTa
         weight_decay=0.01,
         warmup_ratio=0.1,                # Warmup giúp ổn định training đầu
         lr_scheduler_type="cosine",      # <--- QUAN TRỌNG: Giảm LR theo hình Cosine (tốt hơn Linear)
         fp16=True,                       # Tăng tốc trên GPU
-        logging_steps=50,
+        logging_steps=10,
         eval_strategy="steps",
         eval_steps=200,
         save_strategy="steps",
@@ -160,7 +161,9 @@ def train():
         load_best_model_at_end=True,
         metric_for_best_model="accuracy",
         save_total_limit=2,              # Chỉ giữ 2 checkpoint tốt nhất để tiết kiệm ổ cứng
-        report_to="none"
+        report_to="none",
+        # Thêm dòng này để DataLoader load dữ liệu nhanh hơn
+        dataloader_num_workers=2
     )
 
     # Collator padding động
