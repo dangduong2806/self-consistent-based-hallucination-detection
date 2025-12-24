@@ -2,6 +2,7 @@ import sympy
 from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
 from sympy import Eq, simplify, count_ops, Symbol, Number, Float, Integer, solve
 import re
+import difflib
 
 class DeepMathMetrics:
     def __init__(self):
@@ -150,7 +151,7 @@ class DeepMathMetrics:
                 for m in model_sols:
                     for g in golden_sols:
                         try:
-                            if abs(float(m) - float(g)) < 1e-7:
+                            if abs(float(m) - float(g)) < 1e-6:
                                 matched = True; break
                         except: pass
                     if matched: break
@@ -188,7 +189,18 @@ class DeepMathMetrics:
             if expr is None: return 0.0
             
             # Nếu là phương trình Eq(L, R), chuyển thành biểu thức L-R để đo độ phức tạp
-            target_expr = (expr.lhs - expr.rhs) if isinstance(expr, Eq) else expr
+            # target_expr = (expr.lhs - expr.rhs) if isinstance(expr, Eq) else expr
+            # Mặc định target_expr là chính expr
+            target_expr = expr
+            
+            if isinstance(expr, Eq):
+                try:
+                    # Cố gắng chuyển về dạng biểu thức (LHS - RHS)
+                    target_expr = expr.lhs - expr.rhs
+                except TypeError:
+                    # Nếu gặp lỗi trừ Tuple (ví dụ: x = (1, 2)), 
+                    # Python không trừ được, ta giữ nguyên expr để count_ops
+                    target_expr = expr
             
             # Tính độ phức tạp hiện tại
             ops_generated = count_ops(target_expr)
@@ -365,6 +377,21 @@ class DeepMathMetrics:
         all_targets = golden_exprs + [gt_final_expr]
         
         for target in all_targets:
+            # --- LỚP 1: Check Đại số (Algebraic Equivalence) ---
+            try:
+                # Chuyển về biểu thức (LHS - RHS) để trừ nhau
+                e1 = (step_expr.lhs - step_expr.rhs) if isinstance(step_expr, Eq) else step_expr
+                e2 = (target.lhs - target.rhs) if isinstance(target, Eq) else target
+                
+                # Kiểm tra hiệu số
+                diff = simplify(e1 - e2)
+                if diff == 0: return True
+                
+                # Kiểm tra tổng (trường hợp đổi dấu: x-5 vs 5-x)
+                if simplify(e1 + e2) == 0: return True
+            except: 
+                pass
+
             target_sols = self._get_solution_set(target)
             if step_sols and target_sols:
                  for s in step_sols:
@@ -373,6 +400,22 @@ class DeepMathMetrics:
                             if abs(float(s) - float(t)) < 1e-8:
                                 return True # Có khớp
                         except: pass
+            # --- LỚP 3: Check Chuỗi Fuzzy (FIX LỖI CRASH TẠI ĐÂY) ---
+            try:
+                # QUAN TRỌNG: Phải ép kiểu về str() trước khi gọi .lower()
+                # SymPy object như Integer(1) không có hàm .lower()
+                str_step = str(step_expr)
+                str_target = str(target)
+                
+                # So sánh chuỗi (bỏ qua khoảng trắng thừa)
+                matcher = difflib.SequenceMatcher(None, str_step.strip().lower(), str_target.strip().lower())
+                
+                # Nếu giống nhau trên 82% (ví dụ khác tên biến x/y) -> Chấp nhận
+                if matcher.ratio() > 0.82: 
+                    return True
+            except: 
+                pass
+            
         return False
     
     # --------------------------------------------------------------------------
@@ -417,10 +460,22 @@ class DeepMathMetrics:
 
         # 1. EE (Expression Equivalence) - Chỉ tính trên bước cuối cùng của Model
         # So sánh bước cuối model vs (Golden Final Step HOẶC GT Final)
-        model_final = gen_exprs[-1]
-        golden_final = golden_exprs[-1] if golden_exprs else gt_final_expr
-        
-        ee_score = self._calculate_ee(model_final, golden_final)
+        # model_final = gen_exprs[-1]
+
+        model_final = None
+        if gen_exprs:
+            # Lặp ngược từ dưới lên để tìm công thức hợp lệ gần nhất
+            for expr in reversed(gen_exprs):
+                if expr is not None:
+                    model_final = expr
+                    break
+
+        # golden_final = golden_exprs[-1] if golden_exprs else gt_final_expr
+        golden_final = gt_final_expr
+        if model_final is not None:
+            ee_score = self._calculate_ee(model_final, golden_final)
+        else: 
+            ee_score = 0.0
 
         # 2. TSA (Transformation Step Accuracy) - Tính trên từng bước
         tsa_hits = 0
