@@ -16,7 +16,7 @@ verification:
   use_symbolic_check: True # Bật tính năng check bằng SymPy
   atomic_check_enabled: True
   logical_check_enabled: True
-  logprob_threshold: -1.5
+  logprob_threshold: -3
   atomic_check_enabled: True
   # Check 2: Adversarial (self-correction)
   adversarial_enabled: True
