@@ -12,7 +12,7 @@ adaptive_sampling:
   temperature: 0.5 # Tránh sáng tạo
 
 verification:
-  prm_threshold: 0.7 # Điểm số tối thiểu để một bước được coi là đúng
+  prm_threshold: 0.68 # Điểm số tối thiểu để một bước được coi là đúng
   use_symbolic_check: True # Bật tính năng check bằng SymPy
   atomic_check_enabled: True
   logical_check_enabled: True

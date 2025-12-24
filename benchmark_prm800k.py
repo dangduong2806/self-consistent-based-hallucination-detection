@@ -7,6 +7,7 @@ import logging
 import yaml
 import time
 import torch
+import gc
 
 from models.llm_engine import LLMEngine
 from src.step_1_sampler import AdaptiveSampler
@@ -68,8 +69,23 @@ def run_benchmark():
             # Gọi pipeline
             result, sample_count = pipeline.run(problem_text=problem)
 
+            if result is None:
+                print(f"❌ Skipping problem due to pipeline failure.")
+                # Ghi nhận là sai hoặc bỏ qua
+                metrics = {
+                    "EE": 0.0, 
+                    "ASS": 0.0,
+                    "TSA": 0.0
+                } 
+                # Lưu vào log rồi continue sang câu tiếp theo
+                continue
+
             end_time = time.time()
             peak_memory = torch.cuda.max_memory_allocated() / (1024 ** 2) # MB
+
+            # 2. --- QUAN TRỌNG: DỌN DẸP BỘ NHỚ SAU MỖI CÂU ---
+            gc.collect() # Dọn rác RAM CPU
+            torch.cuda.empty_cache() # Dọn rác VRAM GPU
 
             pred = result['final_answer']
             best_path_text = result['final_path_content']
